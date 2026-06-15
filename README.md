@@ -17,27 +17,7 @@
 
 ## 📸 Vista previa
 
-```
-╔══════════════════════════════════════════════════════════════════╗
-║  TMDB   Recomendador de Películas y Series                       ║
-╠══════════════════════════════════════════════════════════════════╣
-║  🔍  [ Inception                          ]  [ Buscar ]          ║
-║  ─────────────────────────────────────────────────────────────   ║
-║  Resultados          │  Recomendaciones                          ║
-║                      │                                           ║
-║  🎬 Inception (2010) │  ┌───────┐ ┌───────┐ ┌───────┐ ┌──────┐ ║
-║  🎬 Interstellar     │  │  🖼️  │ │  🖼️  │ │  🖼️  │ │ 🖼️  │ ║
-║  📺 Dark             │  │poster │ │poster │ │poster │ │poster│ ║
-║                      │  ├───────┤ ├───────┤ ├───────┤ ├──────┤ ║
-║                      │  │Tenet  │ │Matrix │ │ Dark  │ │Dune  │ ║
-║                      │  │⭐ 7.4 │ │⭐ 8.7 │ │⭐ 8.8 │ │⭐8.0 │ ║
-║                      │  │Película│ │Película│ │ Serie │ │Película║
-║                      │  └───────┘ └───────┘ └───────┘ └──────┘ ║
-║  ─────────────────────────────────────────────────────────────   ║
-║  Inception · Ciencia ficción, Acción · ⭐ 8.4                    ║
-║  Un ladrón que roba secretos del subconsciente...                ║
-╚══════════════════════════════════════════════════════════════════╝
-```
+![Vista previa de la aplicación](screenshot.png)
 
 ---
 
@@ -49,7 +29,7 @@
 | 🎴 **Tarjetas con póster** | Imágenes oficiales descargadas automáticamente desde TMDB |
 | ⭐ **Puntuación cromática** | Amarillo ≥7 · Naranja ≥5 · Gris para el resto |
 | 💬 **Sinopsis on hover** | Tooltip con descripción al pasar el cursor sobre el póster |
-| 🌐 **Apertura directa** | Clic en la tarjeta → página oficial de TMDB en el navegador |
+| 🌐 **Apertura directa** | Clic en la tarjeta → busca la película en cliver.mom |
 | ⚡ **Carga asíncrona** | Pósters descargados en segundo plano sin bloquear la UI |
 | 🌍 **100% en español** | Interfaz y resultados completamente en español |
 
@@ -82,11 +62,11 @@ stack = {
 
 ```bash
 # 1. Clona el repositorio
-git clone https://github.com/tu-usuario/recomendador-tmdb.git
-cd recomendador-tmdb
+git clone https://github.com/OLIVER26GOLDEN/python-tmdb-movie-recommender.git
+cd python-tmdb-movie-recommender
 
 # 2. Instala dependencias
-pip install requests Pillow
+pip install -r requirements.txt
 
 # 3. Añade tu API key en netflix_tmdb_es.py
 CLAVE_API = "tu_api_key_aqui"
@@ -117,10 +97,10 @@ Usuario escribe título
         ▼
   Interfaz muestra tarjetas con póster + puntuación + sinopsis
         │
-  Usuario hace clic
+  Usuario hace clic en una tarjeta
         │
         ▼
-  Abre página oficial en TMDB (webbrowser)
+  Abre cliver.mom y busca la película automáticamente
 ```
 
 ---
@@ -128,11 +108,12 @@ Usuario escribe título
 ## 📁 Estructura del proyecto
 
 ```
-recomendador-tmdb/
+python-tmdb-movie-recommender/
 ├── 📄 netflix_tmdb_es.py    ← Aplicación principal
 │    ├── MotorTMDB           ← Clase: comunicación con la API
 │    ├── TarjetaPelicula     ← Clase: widget visual de cada recomendación
 │    └── Aplicacion          ← Clase: ventana principal y lógica de UI
+├── 📄 requirements.txt      ← Dependencias del proyecto
 └── 📄 README.md
 ```
 
