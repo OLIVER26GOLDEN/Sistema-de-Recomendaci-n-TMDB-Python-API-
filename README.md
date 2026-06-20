@@ -1,9 +1,10 @@
 
 <div align="center">
 
-<img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" width="180" alt="TMDB"/>
 
-# 🎬 Recomendador de Películas y Series
+
+# 🎬 Recomendador de Películas y Series<img width="1920" height="1080" alt="screenshot (1)" src="https://github.com/user-attachments/assets/09532bb1-695d-48ac-8c3d-d7bb8ab5e4fe" />
+
 
 **Aplicación de escritorio en Python que recomienda películas y series en tiempo real usando la API oficial de TMDB.**
 
@@ -18,8 +19,7 @@
 
 ## 📸 Vista previa
 
-<img width="1920" height="1080" alt="screenshot" src="https://github.com/user-attachments/assets/7de51893-f6cc-4b9c-817e-e1a425b3ab6a" />
-
+<img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" width="180" alt="TMDB"/>
 
 ---
 
