@@ -7,6 +7,8 @@ from io import BytesIO
 import threading
 import random
 import webbrowser  # Para abrir el navegador al hacer clic en una tarjeta
+import urllib.parse
+from bs4 import BeautifulSoup
 
 # ──────────────────────────────────────────────
 #  CONFIGURACIÓN GENERAL
@@ -22,6 +24,7 @@ COLOR_ROJO       = "#e50914"
 COLOR_BLANCO     = "#ffffff"
 COLOR_GRIS       = "#808080"
 COLOR_OSCURO     = "#2a2a2a"
+COLOR_VERDE      = "#3ddc97"  # Para "Disponible" en Cliver
 
 
 def _oscurecer_color(color_hex, factor=0.82):
@@ -145,6 +148,28 @@ class MotorTMDB:
             })
         return resultados
 
+    def verificar_disponibilidad_cliver(self, titulo):
+        """Comprueba si un título tiene resultados en la búsqueda de cliver.mom.
+        Devuelve True (disponible), False (no disponible) o None (no se pudo comprobar,
+        p. ej. por un fallo de red)."""
+        consulta = urllib.parse.quote(titulo)
+        url = f"https://cliver.mom/index.php?do=search&subaction=search&story={consulta}"
+
+        try:
+            respuesta = self.sesion.get(
+                url, timeout=8,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            respuesta.raise_for_status()
+            sopa = BeautifulSoup(respuesta.text, "html.parser")
+
+            # Cada resultado real de búsqueda viene envuelto en <article class="contenido-p">
+            # Si no hay resultados, Cliver muestra un aviso de "no results" y no hay ninguno.
+            resultados = sopa.select("article.contenido-p")
+            return len(resultados) > 0
+        except Exception:
+            return None  # Fallo de red: no afirmamos ni disponible ni no disponible
+
 
 # ──────────────────────────────────────────────
 #  TARJETA VISUAL DE CADA RECOMENDACIÓN
@@ -172,9 +197,9 @@ class TarjetaPelicula(tk.Frame):
         # ── Insignia para las mejor valoradas, para llamar la atención ──
         puntuacion = recomendacion["puntuacion"]
         if puntuacion >= 8.5:
-            texto_insignia, color_insignia, color_texto_insignia = "👑 OBRA MAESTRA", "#ffd60a", "#1a1a1a"
+            texto_insignia, color_insignia, color_texto_insignia = "OBRA MAESTRA", "#ffd60a", "#1a1a1a"
         elif puntuacion >= 7.5:
-            texto_insignia, color_insignia, color_texto_insignia = "🔥 MUY VALORADA", COLOR_ROJO, COLOR_BLANCO
+            texto_insignia, color_insignia, color_texto_insignia = "MUY VALORADA", COLOR_ROJO, COLOR_BLANCO
         else:
             texto_insignia = None
 
@@ -200,7 +225,7 @@ class TarjetaPelicula(tk.Frame):
         else:
             color_puntuacion = COLOR_GRIS  # Gris: puntuación baja o sin datos
 
-        tk.Label(self, text=f"⭐ {puntuacion:.1f}",
+        tk.Label(self, text=f"{puntuacion:.1f} / 10",
                  font=("Arial", 9),
                  fg=color_puntuacion, bg=COLOR_TARJETA).pack()
 
@@ -208,6 +233,19 @@ class TarjetaPelicula(tk.Frame):
         tk.Label(self, text=recomendacion["tipo"],
                  font=("Arial", 8),
                  fg=COLOR_GRIS, bg=COLOR_TARJETA).pack()
+
+        # ── Etiqueta de disponibilidad en Cliver (se actualiza en segundo plano) ──
+        self.etiqueta_disponibilidad = tk.Label(
+            self, text="", font=("Arial", 8, "bold"),
+            fg=COLOR_ROJO, bg=COLOR_TARJETA
+        )
+        self.etiqueta_disponibilidad.pack()
+
+        threading.Thread(
+            target=self._comprobar_disponibilidad,
+            args=(motor, recomendacion["titulo"]),
+            daemon=True
+        ).start()
 
         # ── Tooltip con sinopsis al pasar el cursor ──
         self._tooltip = None
@@ -231,7 +269,6 @@ class TarjetaPelicula(tk.Frame):
 
     def _abrir_en_cliver(self, evento=None):
         """Abre cliver.mom en el navegador buscando el título de la película o serie."""
-        import urllib.parse
         consulta = urllib.parse.quote(self._titulo_original)
         url = f"https://cliver.mom/index.php?do=search&subaction=search&story={consulta}"
         webbrowser.open(url)
@@ -248,6 +285,24 @@ class TarjetaPelicula(tk.Frame):
                 )
             )
 
+    def _comprobar_disponibilidad(self, motor, titulo):
+        """Consulta en segundo plano si la peli/serie está disponible en Cliver
+        y actualiza la etiqueta correspondiente en la tarjeta."""
+        disponible = motor.verificar_disponibilidad_cliver(titulo)
+
+        if disponible is False:
+            texto, color = "No disponible", COLOR_ROJO
+        elif disponible is True:
+            texto, color = "Disponible", COLOR_VERDE
+        else:
+            return  # Fallo de red al comprobar: no mostramos nada
+
+        # Comprobamos que el widget siga existiendo antes de tocarlo (por si se destruyó la tarjeta)
+        if self.etiqueta_disponibilidad.winfo_exists():
+            self.etiqueta_disponibilidad.after(
+                0, lambda: self.etiqueta_disponibilidad.configure(text=texto, fg=color)
+            )
+
     def _mostrar_tooltip(self, evento=None):
         """Resalta la tarjeta y muestra una ventana emergente con la sinopsis."""
         self.configure(highlightbackground=COLOR_ROJO)  # Borde rojo al pasar el cursor
@@ -258,7 +313,7 @@ class TarjetaPelicula(tk.Frame):
         self._tooltip = ventana = tk.Toplevel(self)
         ventana.wm_overrideredirect(True)  # Sin borde ni barra de título
         ventana.wm_geometry(f"+{x}+{y}")
-        texto_tooltip = self._sinopsis + "\n\n🖱️ Clic para ver en cliver.mom"
+        texto_tooltip = self._sinopsis + "\n\nClic para ver en cliver.mom"
         tk.Label(
             ventana, text=texto_tooltip,
             font=("Arial", 9), bg="#222", fg=COLOR_BLANCO,
@@ -349,7 +404,7 @@ class Aplicacion:
                  font=("Arial", 15), fg=COLOR_BLANCO, bg=COLOR_FONDO).pack(side="left", pady=4)
 
         tk.Label(
-            self.ventana, text="🍿  Descubre tu próxima película o serie favorita",
+            self.ventana, text="Descubre tu próxima película o serie favorita",
             font=("Arial", 10), fg=COLOR_GRIS, bg=COLOR_FONDO
         ).pack(anchor="w", padx=24, pady=(0, 6))
 
@@ -393,7 +448,7 @@ class Aplicacion:
         contenido_filtros.pack(fill="x", padx=18, pady=14)
 
         tk.Label(
-            contenido_filtros, text="🎭  Explorar por género y puntuación",
+            contenido_filtros, text="Explorar por género y puntuación",
             font=("Arial", 11, "bold"), fg=COLOR_BLANCO, bg=COLOR_TARJETA
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
@@ -424,10 +479,10 @@ class Aplicacion:
         self.combo_genero.grid(row=2, column=1, sticky="we", padx=(16, 0), pady=(3, 0))
 
         # Puntuación mínima
-        self.var_puntuacion = tk.StringVar(value="7+ ⭐")
+        self.var_puntuacion = tk.StringVar(value="7+")
         combo_puntuacion = ttk.Combobox(
             contenido_filtros, textvariable=self.var_puntuacion,
-            values=["5+ ⭐", "6+ ⭐", "7+ ⭐", "8+ ⭐", "9+ ⭐"],
+            values=["5+", "6+", "7+", "8+", "9+"],
             state="readonly", width=8, font=("Arial", 10)
         )
         combo_puntuacion.grid(row=2, column=2, sticky="we", padx=(16, 0), pady=(3, 0))
@@ -446,7 +501,7 @@ class Aplicacion:
                  fg=COLOR_GRIS, bg=COLOR_TARJETA).pack(side="left")
 
         boton_sorpresa = tk.Button(
-            fila_encabezado_chips, text="🎲 Sorpréndeme",
+            fila_encabezado_chips, text="Sorpréndeme",
             font=("Arial", 9, "bold"), bg="#ffd60a", fg="#1a1a1a",
             relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
             activebackground="#ffd60a", activeforeground="#1a1a1a",
@@ -458,18 +513,18 @@ class Aplicacion:
 
         # Géneros destacados en dos filas, cada uno con su propio color para dar vida visual
         generos_destacados = [
-            [("Acción", "💥", "#ff6b35"), ("Terror", "👻", "#6c3483"),
-             ("Comedia", "😂", "#f1c40f"), ("Ciencia ficción", "🚀", "#00b4d8")],
-            [("Romance", "💕", "#ff4d6d"), ("Animación", "🎨", "#06d6a0"),
-             ("Drama", "🎭", "#5c6bc0"), ("Suspense", "😱", "#2c2c54")],
+            [("Acción", "#ff6b35"), ("Terror", "#6c3483"),
+             ("Comedia", "#f1c40f"), ("Ciencia ficción", "#00b4d8")],
+            [("Romance", "#ff4d6d"), ("Animación", "#06d6a0"),
+             ("Drama", "#5c6bc0"), ("Suspense", "#2c2c54")],
         ]
         for fila_generos in generos_destacados:
             fila_chips = tk.Frame(marco_chips, bg=COLOR_TARJETA)
             fila_chips.pack(anchor="w", pady=(0, 6))
-            for nombre, emoji, color in fila_generos:
+            for nombre, color in fila_generos:
                 color_texto = "#1a1a1a" if nombre in ("Comedia", "Animación") else COLOR_BLANCO
                 chip = tk.Button(
-                    fila_chips, text=f"{emoji} {nombre}", font=("Arial", 9, "bold"),
+                    fila_chips, text=nombre, font=("Arial", 9, "bold"),
                     bg=color, fg=color_texto, relief="flat", bd=0,
                     padx=10, pady=4, cursor="hand2",
                     activebackground=color, activeforeground=color_texto,
@@ -509,22 +564,37 @@ class Aplicacion:
                  font=("Arial", 10, "bold"),
                  fg=COLOR_BLANCO, bg=COLOR_FONDO).pack(anchor="w")
 
-        # Canvas con scroll horizontal para mostrar todas las tarjetas
+        # Canvas con scroll vertical: las tarjetas se acomodan en cuadrícula
+        # (varias por fila) en vez de una única fila horizontal interminable.
         marco_canvas = tk.Frame(columna_derecha, bg=COLOR_FONDO)
         marco_canvas.pack(fill="both", expand=True, pady=(4, 0))
 
         self.canvas = tk.Canvas(marco_canvas, bg=COLOR_FONDO, highlightthickness=0)
-        self.canvas.pack(side="top", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True)
 
-        barra_scroll = ttk.Scrollbar(marco_canvas, orient="horizontal",
-                                     command=self.canvas.xview)
-        barra_scroll.pack(side="bottom", fill="x")
-        self.canvas.configure(xscrollcommand=barra_scroll.set)
+        barra_scroll = ttk.Scrollbar(marco_canvas, orient="vertical",
+                                     command=self.canvas.yview)
+        barra_scroll.pack(side="right", fill="y")
+        self.canvas.configure(yscrollcommand=barra_scroll.set)
 
         # Frame interno que contiene las tarjetas
         self.marco_tarjetas = tk.Frame(self.canvas, bg=COLOR_FONDO)
-        self.canvas.create_window((0, 0), window=self.marco_tarjetas, anchor="nw")
+        self._ventana_tarjetas = self.canvas.create_window(
+            (0, 0), window=self.marco_tarjetas, anchor="nw"
+        )
         self.marco_tarjetas.bind("<Configure>", self._actualizar_scroll)
+        # El frame interno debe ocupar todo el ancho del canvas, para que la
+        # cuadrícula se recalcule bien si se redimensiona la ventana.
+        self.canvas.bind(
+            "<Configure>",
+            lambda e: self.canvas.itemconfig(self._ventana_tarjetas, width=e.width)
+        )
+
+        # ── Scroll vertical con la rueda del ratón (sin tocar la barra) ──
+        # Solo se activa cuando el cursor está sobre el área de tarjetas, para no
+        # interferir con el scroll de otras partes de la ventana.
+        self.canvas.bind("<Enter>", lambda e: self._activar_scroll_rueda())
+        self.canvas.bind("<Leave>", lambda e: self._desactivar_scroll_rueda())
 
         # ── Área de sinopsis de la selección actual ──
         self.area_sinopsis = tk.Text(
@@ -535,9 +605,62 @@ class Aplicacion:
         )
         self.area_sinopsis.pack(fill="x", padx=24, pady=(0, 12))
 
+    # Ancho aproximado que ocupa cada tarjeta (tarjeta + espacio a los lados),
+    # usado para calcular cuántas caben por fila según el ancho de la ventana.
+    ANCHO_TARJETA_CON_MARGEN = 130 + 16
+
+    def _mostrar_tarjetas(self, lista_recomendaciones, mensaje_vacio):
+        """Limpia el área de recomendaciones y coloca las tarjetas en una
+        cuadrícula (varias por fila) en vez de una única fila horizontal,
+        para aprovechar mejor el ancho de la ventana."""
+        for widget in self.marco_tarjetas.winfo_children():
+            widget.destroy()
+        self._tarjetas.clear()
+
+        if not lista_recomendaciones:
+            tk.Label(
+                self.marco_tarjetas, text=mensaje_vacio,
+                font=("Arial", 12), fg=COLOR_GRIS, bg=COLOR_FONDO
+            ).grid(row=0, column=0, pady=40)
+            return
+
+        # Cuántas tarjetas caben por fila según el ancho actual del canvas
+        ancho_disponible = max(self.canvas.winfo_width(), 1)
+        columnas = max(1, ancho_disponible // self.ANCHO_TARJETA_CON_MARGEN)
+
+        for indice, rec in enumerate(lista_recomendaciones):
+            fila, columna = divmod(indice, columnas)
+            tarjeta = TarjetaPelicula(self.marco_tarjetas, rec, self.motor)
+            tarjeta.grid(row=fila, column=columna, padx=8, pady=8)
+            self._tarjetas.append(tarjeta)
+
     def _actualizar_scroll(self, evento):
         """Recalcula el área de scroll cuando cambia el tamaño del marco de tarjetas."""
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _activar_scroll_rueda(self):
+        """Engancha la rueda del ratón al scroll vertical mientras el cursor
+        esté sobre el área de tarjetas (Windows/Mac usan <MouseWheel>,
+        Linux usa <Button-4>/<Button-5>)."""
+        self.canvas.bind_all("<MouseWheel>", self._con_rueda_raton)
+        self.canvas.bind_all("<Button-4>", self._con_rueda_raton)
+        self.canvas.bind_all("<Button-5>", self._con_rueda_raton)
+
+    def _desactivar_scroll_rueda(self):
+        """Desengancha la rueda del ratón al salir del área de tarjetas."""
+        self.canvas.unbind_all("<MouseWheel>")
+        self.canvas.unbind_all("<Button-4>")
+        self.canvas.unbind_all("<Button-5>")
+
+    def _con_rueda_raton(self, evento):
+        """Mueve el scroll vertical según el giro de la rueda del ratón."""
+        if evento.num == 4:          # Linux: rueda hacia arriba
+            self.canvas.yview_scroll(-2, "units")
+        elif evento.num == 5:        # Linux: rueda hacia abajo
+            self.canvas.yview_scroll(2, "units")
+        else:                        # Windows/Mac: evento.delta (múltiplos de 120)
+            direccion = -1 if evento.delta > 0 else 1
+            self.canvas.yview_scroll(direccion * 2, "units")
 
     def _mensaje_error_tmdb(self, error):
         """Convierte un error técnico en un mensaje claro para el usuario.
@@ -594,7 +717,7 @@ class Aplicacion:
         self._actualizar_generos()
         if nombre_genero in self._generos_pelicula:
             self.var_genero.set(nombre_genero)
-        self.var_puntuacion.set("6+ ⭐")
+        self.var_puntuacion.set("6+")
         self._explorar_por_genero()
 
     def _sorprendeme(self):
@@ -610,7 +733,7 @@ class Aplicacion:
         self._actualizar_generos()
         diccionario = self._generos_pelicula if tipo_aleatorio == "Película" else self._generos_serie
         self.var_genero.set(random.choice(list(diccionario.keys())))
-        self.var_puntuacion.set(random.choice(["6+ ⭐", "7+ ⭐", "8+ ⭐"]))
+        self.var_puntuacion.set(random.choice(["6+", "7+", "8+"]))
         self._explorar_por_genero()
 
     def _explorar_por_genero(self):
@@ -642,21 +765,9 @@ class Aplicacion:
             # Quitar selección de la lista de búsqueda, ya no aplica a este resultado
             self.lista_resultados.selection_clear(0, tk.END)
 
-            for widget in self.marco_tarjetas.winfo_children():
-                widget.destroy()
-            self._tarjetas.clear()
-
-            if not resultados:
-                tk.Label(
-                    self.marco_tarjetas,
-                    text="No se encontraron títulos con esos filtros.",
-                    font=("Arial", 12), fg=COLOR_GRIS, bg=COLOR_FONDO
-                ).pack(pady=40)
-            else:
-                for rec in resultados:
-                    tarjeta = TarjetaPelicula(self.marco_tarjetas, rec, self.motor)
-                    tarjeta.pack(side="left", padx=8, pady=8)
-                    self._tarjetas.append(tarjeta)
+            self._mostrar_tarjetas(
+                resultados, "No se encontraron títulos con esos filtros."
+            )
 
             self.area_sinopsis.configure(state="normal")
             self.area_sinopsis.delete("1.0", tk.END)
@@ -668,7 +779,7 @@ class Aplicacion:
             self.area_sinopsis.configure(state="disabled")
 
             self.texto_estado.set(
-                f"{len(resultados)} resultados · {genero_nombre} · {puntuacion_minima}+ ⭐ · "
+                f"{len(resultados)} resultados · {genero_nombre} · {puntuacion_minima}+ estrellas · "
                 "Pasa el cursor sobre un póster para ver la sinopsis · Clic para ver en cliver.mom"
             )
 
@@ -690,7 +801,7 @@ class Aplicacion:
             self.lista_resultados.delete(0, tk.END)
 
             for resultado in self.resultados_busqueda:
-                icono = "🎬" if resultado.get("media_type") == "movie" else "📺"
+                icono = "[Película]" if resultado.get("media_type") == "movie" else "[Serie]"
                 titulo = resultado.get("title") or resultado.get("name", "")
                 anio = (resultado.get("release_date") or
                         resultado.get("first_air_date") or "")[:4]
@@ -721,23 +832,9 @@ class Aplicacion:
             detalles = self.motor.obtener_detalles(id_media, tipo_media)
             recomendaciones = self.motor.obtener_recomendaciones(id_media, tipo_media)
 
-            # Eliminar tarjetas anteriores
-            for widget in self.marco_tarjetas.winfo_children():
-                widget.destroy()
-            self._tarjetas.clear()
-
-            if not recomendaciones:
-                tk.Label(
-                    self.marco_tarjetas,
-                    text="No hay recomendaciones disponibles para esta selección.",
-                    font=("Arial", 12), fg=COLOR_GRIS, bg=COLOR_FONDO
-                ).pack(pady=40)
-            else:
-                # Crear una tarjeta por cada recomendación
-                for rec in recomendaciones:
-                    tarjeta = TarjetaPelicula(self.marco_tarjetas, rec, self.motor)
-                    tarjeta.pack(side="left", padx=8, pady=8)
-                    self._tarjetas.append(tarjeta)
+            self._mostrar_tarjetas(
+                recomendaciones, "No hay recomendaciones disponibles para esta selección."
+            )
 
             # Actualizar el área de sinopsis con los detalles de la selección
             self.area_sinopsis.configure(state="normal")
@@ -746,7 +843,7 @@ class Aplicacion:
             texto_info = (
                 f"{detalles['titulo']}  ·  "
                 f"Géneros: {generos}  ·  "
-                f"⭐ {detalles['puntuacion']:.1f}\n"
+                f"Puntuación: {detalles['puntuacion']:.1f} / 10\n"
                 f"{detalles['sinopsis']}"
             )
             self.area_sinopsis.insert("1.0", texto_info)
